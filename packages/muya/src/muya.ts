@@ -1,5 +1,6 @@
 import type Content from './block/base/content';
 import type Parent from './block/base/parent';
+import type { IFoldedSection } from './block/folding';
 import type { TBlockPath } from './block/types';
 import type { Listener } from './event/types';
 import type { ILocale } from './i18n/types';
@@ -11,7 +12,7 @@ import type { IBulletListState, IOrderListState, ITableState, ITaskListState, TS
 import type { IMuyaOptions, Nullable } from './types';
 import Format from './block/base/format';
 import { canTurnInto, insertBlockBelowByLabel, insertFrontMatterAtStart, replaceBlockByLabel } from './block/blockTransforms';
-import { revealBlock } from './block/folding';
+import { getFoldedSections, restoreFoldedSections, revealBlock } from './block/folding';
 import { canConvertGithubAlert, convertGithubAlert } from './block/githubAlerts';
 import { ScrollPage } from './block/scrollPage';
 import emptyStates from './config/emptyStates';
@@ -268,6 +269,18 @@ export class Muya {
      */
     clearHistory() {
         this.editor.history.clear();
+    }
+
+    /** Capture transient folds for later restoration on the same document. */
+    getFoldedSections(): IFoldedSection[] {
+        const { scrollPage } = this.editor;
+        return scrollPage ? getFoldedSections(scrollPage) : [];
+    }
+
+    restoreFoldedSections(sections: readonly IFoldedSection[]): void {
+        const { scrollPage } = this.editor;
+        if (scrollPage)
+            restoreFoldedSections(scrollPage, sections);
     }
 
     /** Reveal an editor element before the host measures it for scrolling. */

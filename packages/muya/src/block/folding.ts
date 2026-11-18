@@ -1,6 +1,8 @@
 import type Parent from './base/parent';
 import type TreeNode from './base/treeNode';
 import type { IFoldableHeading } from './commonMark/atxHeading/foldSection';
+import type { ScrollPage } from './scrollPage';
+import type { TBlockPath } from './types';
 import { CLASS_NAMES } from '../config';
 import { headingLevel, hiddenByFoldedSections, isFoldableHeading } from './commonMark/atxHeading/foldSection';
 
@@ -9,6 +11,35 @@ const foldEnds = new WeakMap<IFoldableHeading, TreeNode>();
 const foldedParents = new WeakSet<Parent>();
 // Parent-owned snapshots avoid rescanning siblings for every skipped content block.
 const hiddenBlocksByParent = new WeakMap<Parent, WeakSet<TreeNode>>();
+
+export interface IFoldedSection {
+    headingPath: TBlockPath;
+    endOffset: number;
+}
+
+export function getFoldedSections(root: ScrollPage): IFoldedSection[] {
+    const sections: IFoldedSection[] = [];
+    root.depthFirstTraverse((block) => {
+        if (!block.isParent() || !isFoldableHeading(block) || !block.folded || !block.parent)
+            return;
+        const end = foldEnds.get(block) ?? block;
+        sections.push({ headingPath: block.path, endOffset: block.parent.offset(end) });
+    });
+    return sections;
+}
+
+export function restoreFoldedSections(root: ScrollPage, sections: readonly IFoldedSection[]): void {
+    // Restore inner folds first so relocating a hidden caret cannot reopen an outer fold.
+    for (const { headingPath, endOffset } of [...sections].reverse()) {
+        const heading = root.queryBlock([...headingPath]);
+        if (!heading || !isFoldableHeading(heading) || !heading.parent)
+            continue;
+        const end = heading.parent.find(endOffset);
+        if (end)
+            foldEnds.set(heading, end);
+        heading.toggleFold(true);
+    }
+}
 
 /** Recompute direct-child visibility; nested containers own their own folds. */
 export function refreshFoldVisibility(parent: Parent, foldChanged = false): void {

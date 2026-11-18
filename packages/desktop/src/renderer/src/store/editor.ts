@@ -891,6 +891,7 @@ export const useEditorStore = defineStore('editor', {
 
         bus.emit('file-changed', {
           id,
+          previousTabId: oldCurrentFile?.id,
           markdown,
           cursor,
           muyaIndexCursor,
