@@ -279,6 +279,10 @@ let scrollHandler: ((e: Event) => void) | null = null
 // per-tab map here for restoration across in-session tab switches, and feed the
 // store a SYNTHETIC desktop-shaped history.
 const engineHistoryByTab = new Map<string, ISerializedHistory>()
+const foldsByTab = new Map<
+  string,
+  { markdown: string; sections: ReturnType<Muya['getFoldedSections']> }
+>()
 
 // The WYSIWYG caret captured the instant the user switches INTO source mode.
 // Focus moves to CodeMirror while source mode is up, so by the time the tab is
@@ -320,6 +324,9 @@ const makeSyntheticHistory = (id: string, content: string): IFileHistoryLike => 
 const pruneClosedTabState = (liveTabIds: Set<string>): void => {
   for (const id of engineHistoryByTab.keys()) {
     if (!liveTabIds.has(id)) engineHistoryByTab.delete(id)
+  }
+  for (const id of foldsByTab.keys()) {
+    if (!liveTabIds.has(id)) foldsByTab.delete(id)
   }
   for (const id of syntheticHistoryByTab.keys()) {
     if (!liveTabIds.has(id)) syntheticHistoryByTab.delete(id)
@@ -1275,13 +1282,17 @@ const scrollToHeader = (slug: unknown) => {
   if (!container) return
   const heading = resolveTocHeadingElement(container, editorStore.listToc, slug)
   if (!heading) return
+  editor.value?.revealElement(heading)
   animatedScrollTo(container, getTocHeadingScrollTop(container, heading), 300)
 }
 
 // Scrolls to a non-heading in-document anchor target (e.g. a custom
 // `<a id="...">`) resolved by `FORMAT_LINK_CLICK` via `getElementById`.
 const scrollToAnchorElement = (element: unknown) => {
-  if (element instanceof Element) scrollElementIntoView(element)
+  if (element instanceof Element) {
+    editor.value?.revealElement(element)
+    scrollElementIntoView(element)
+  }
 }
 
 const scrollToElement = (selector: string) => {
@@ -1526,6 +1537,7 @@ const setMarkdownToEditor = (payload: unknown) => {
 
 interface FileChangePayload {
   id?: string
+  previousTabId?: string
   markdown?: string
   cursor?: unknown
   renderCursor?: boolean
@@ -1540,6 +1552,7 @@ interface FileChangePayload {
 const handleFileChange = (payload: unknown) => {
   const {
     id,
+    previousTabId,
     markdown: newMarkdown,
     cursor: newCursor,
     muyaIndexCursor,
@@ -1606,6 +1619,14 @@ const handleFileChange = (payload: unknown) => {
         applyCursor(editor.value, newCursor)
       }
     } else {
+      if (previousTabId) {
+        const sections = editor.value.getFoldedSections()
+        if (sections.length) {
+          foldsByTab.set(previousTabId, { markdown: editor.value.getMarkdown(), sections })
+        } else {
+          foldsByTab.delete(previousTabId)
+        }
+      }
       // Tab switch / programmatic content swap: `setContent` replaces the
       // document and clears history, so restore the real engine history (kept
       // per-tab) afterwards — preserves undo/redo on in-session tab switch. The
@@ -1633,7 +1654,13 @@ const handleFileChange = (payload: unknown) => {
       // any edit. For a tab that already has a tracker this is a no-op —
       // switching back must keep the existing content -> id map.
       if (id) {
-        getSyntheticHistory(id, editor.value.getMarkdown())
+        const markdown = editor.value.getMarkdown()
+        const savedFolds = foldsByTab.get(id)
+        // Source edits can change the block paths while the tab is inactive.
+        if (savedFolds?.markdown === markdown) {
+          editor.value.restoreFoldedSections(savedFolds.sections)
+        }
+        getSyntheticHistory(id, markdown)
       }
     }
   } else if (newCursor) {
